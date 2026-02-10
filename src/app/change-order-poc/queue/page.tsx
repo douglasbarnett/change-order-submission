@@ -41,7 +41,7 @@ type QueueItem = {
   decisionEmailBody?: string;
   decisionEmailError?: string;
   decisionEmailPreviewUrl?: string;
-  decisionEmailMode?: "smtp" | "preview";
+  decisionEmailMode?: "resend" | "smtp" | "preview";
   input: {
     projectId: string;
     contractorName: string;

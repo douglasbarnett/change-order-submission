@@ -48,6 +48,13 @@ h2 {
 .brand-logo {
   width: 72px;
   height: auto;
+  display: block;
+  flex-shrink: 0;
+}
+
+.brand-header h1 {
+  margin: 0;
+  line-height: 1.15;
 }
 
 section {

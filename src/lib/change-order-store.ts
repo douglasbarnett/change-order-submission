@@ -11,7 +11,8 @@ export type DenialReasonCode =
   | "IN_SCOPE_OF_TURNKEY"
   | "OTHER";
 export type DecisionEmailStatus = "PENDING" | "SENT" | "FAILED";
-export type DecisionEmailMode = "smtp" | "preview";
+// Keep legacy values for older records while moving forward with Resend.
+export type DecisionEmailMode = "resend" | "smtp" | "preview";
 
 export type StoredChangeOrder = {
   id: string;

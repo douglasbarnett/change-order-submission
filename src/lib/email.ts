@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 type DecisionEmailInput = {
   to: string;
@@ -11,95 +11,59 @@ type DecisionEmailResult = {
   sent: boolean;
   messageId?: string;
   previewUrl?: string;
-  mode: "smtp" | "preview";
+  mode: "resend";
   error?: string;
 };
 
-function getTransportConfig() {
-  const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (host && port && user && pass) {
+export async function sendDecisionEmail(input: DecisionEmailInput): Promise<DecisionEmailResult> {
+  const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
+  if (!resendApiKey) {
     return {
-      type: "smtp" as const,
-      transporter: nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-      }),
+      sent: false,
+      mode: "resend",
+      error: "RESEND_API_KEY is missing.",
     };
   }
 
-  return null;
-}
-
-function getEmailMode(): "smtp" | "preview" {
-  const configured = (process.env.EMAIL_MODE || "").trim().toLowerCase();
-  return configured === "smtp" ? "smtp" : "preview";
-}
-
-export async function sendDecisionEmail(input: DecisionEmailInput): Promise<DecisionEmailResult> {
   try {
-    let transporter: nodemailer.Transporter;
-    const mode = getEmailMode();
-
-    if (mode === "smtp") {
-      const configured = getTransportConfig();
-      if (!configured) {
-        return {
-          sent: false,
-          mode: "smtp",
-          error: "SMTP mode is enabled but SMTP credentials are missing.",
-        };
-      }
-      transporter = configured.transporter;
-    } else {
-      const testAccount = await nodemailer.createTestAccount();
-      transporter = nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
-
+    const resend = new Resend(resendApiKey);
     const from = process.env.EMAIL_FROM || "Remi Change Orders <no-reply@remi.local>";
     const remiLogoSvg = `<svg width="56" height="22" viewBox="0 0 56 22" fill="none" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#clip0_991_3694)"><path d="M4.0793 9.14031V6.77344H0.134235V20.9747H4.0793V14.0712C4.0793 11.6478 4.95284 10.0421 6.89709 10.0421H9.23567V6.77344H7.63004C5.91125 6.77344 4.84054 7.36494 4.08016 9.14031H4.0793Z" fill="#138CF6"/><path d="M55.1243 6.77344H51.1792V20.9747H55.1243V6.77344Z" fill="#138CF6"/><path d="M55.1243 0.800049H51.1792V4.74512H55.1243V0.800049Z" fill="#138CF6"/><path d="M48.1892 11.3872C48.0143 8.6851 45.7666 6.54798 43.0208 6.54798C42.9411 6.54798 42.8613 6.55055 42.7825 6.55398C42.755 6.55483 42.7285 6.55655 42.701 6.55826C42.653 6.56083 42.6059 6.56512 42.5587 6.56855C39.8815 6.79829 38.0873 8.94142 38.0873 8.94142C37.1675 7.5021 35.555 6.54712 33.7196 6.54712C32.0394 6.54712 30.5461 7.34693 29.6005 8.58652V6.77258H25.6555V20.9729H29.6005V12.5496C29.6005 11.0708 30.799 9.87154 32.2777 9.87154C33.7565 9.87154 34.9558 11.0708 34.9558 12.5496V20.9729H38.9V12.5496C38.9 11.0708 40.0993 9.87154 41.578 9.87154C43.0568 9.87154 44.2552 11.0708 44.2552 12.5496V20.9729H48.2003V11.7275C48.2003 11.6126 48.1969 11.4986 48.1883 11.3863L48.1892 11.3872Z" fill="#138CF6"/><path d="M13.7491 12.2683H20.0267C19.9127 10.6901 18.8 9.42221 16.8875 9.42221C14.975 9.42221 13.8631 10.6901 13.7491 12.2683ZM13.7491 14.7475C13.7491 15.0123 13.8837 17.9879 17.1695 17.9879C19.0315 17.9879 19.7773 17.0157 20.0267 16.1568L23.9032 16.1559C23.0803 18.8811 20.7768 21.2 17.0581 21.2C12.3132 21.2 9.87175 17.4238 9.87175 13.8456C9.87175 10.2675 12.0697 6.54785 16.8875 6.54785C21.7052 6.54785 23.9032 10.2392 23.9032 13.8456V14.7475H13.7491Z" fill="#138CF6"/></g><defs><clipPath id="clip0_991_3694"><rect width="54.9901" height="20.4" fill="white" transform="translate(0.134235 0.800049)"/></clipPath></defs></svg>`;
-    const info = await transporter.sendMail({
+    const encodedLogo = `data:image/svg+xml;utf8,${encodeURIComponent(remiLogoSvg)}`;
+    const htmlWithEmbeddedLogo = (input.html ?? `<pre style="font-family:Inter,Segoe UI,Arial,sans-serif;white-space:pre-wrap;">${input.text}</pre>`).replaceAll(
+      "cid:remi-logo@change-order",
+      encodedLogo,
+    );
+
+    const response = await resend.emails.send({
       from,
       to: input.to,
       subject: input.subject,
       text: input.text,
-      html: input.html ?? `<pre style="font-family:Inter,Segoe UI,Arial,sans-serif;white-space:pre-wrap;">${input.text}</pre>`,
-      attachments: [
-        {
-          filename: "remi-logo.svg",
-          content: remiLogoSvg,
-          contentType: "image/svg+xml",
-          cid: "remi-logo@change-order",
-        },
-      ],
+      html: htmlWithEmbeddedLogo,
     });
 
-    const previewUrl = mode === "preview" ? nodemailer.getTestMessageUrl(info) || undefined : undefined;
+    if (response.error) {
+      return {
+        sent: false,
+        mode: "resend",
+        error: response.error.message ?? "Unknown Resend error",
+      };
+    }
 
     return {
       sent: true,
-      messageId: info.messageId,
-      mode,
-      previewUrl,
+      messageId: response.data?.id,
+      mode: "resend",
+      previewUrl: undefined,
     };
   } catch (error) {
     return {
       sent: false,
-      mode: getEmailMode(),
+      mode: "resend",
       error: error instanceof Error ? error.message : "Unknown email error",
     };
   }
 }
+
+export const sendEmail = sendDecisionEmail;
